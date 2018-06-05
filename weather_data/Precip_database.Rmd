@@ -1,0 +1,115 @@
+---
+title: "Weather_Station_Precipitation"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+
+
+#Creates Class for precipitation data
+setClass("Precipitation Class",
+         slots = list(Data="list",
+                      Station = "character",
+                      Gage_ID = "character",
+                      Station_Type="character",
+                      Years_Since_Install="character",
+                      Data_Begins = "character",
+                      Nearest_City="character",
+                      County="character",
+                      Latitude="numeric",
+                      Longitude="numeric",
+                      Elevation="character",
+                      Location="character"))
+
+
+
+#Preciptation Database function
+
+precip_database <- function(directory){
+  
+  #Read in filenames and paths
+  
+    precip_files_names<-list.files(directory)
+    precip_files_full <- list.files(directory, full.names = TRUE)
+    
+    precip_files_sans_ext <- vapply(precip_files_names,tools::file_path_sans_ext,character(1),USE.NAMES = FALSE)
+    
+    #make a list of Precipitation Class objects.
+    
+    station_data <- lapply(precip_files_sans_ext, function(x){x<-new(Class = "Precipitation Class")})
+    names(station_data) <- precip_files_sans_ext
+    
+    
+    #variables to use in the for loop
+    
+    Years_of_interest <- c("2006","2007","2008","2009","2010","2011","2012","2013","2014","2015","2016","2017")
+    
+    slot_names <- slotNames(station_data[[1]])
+    
+    
+      ################# Loop To Create Database #############################
+    
+    for ( i in 1:length(precip_files_full)){
+      
+     #reads in the meta stats from each weather station
+      
+       tmp_meta <- read.xlsx(file = precip_files_full[i], sheetName = "Meta_Stats", rowIndex = seq(3,14), colIndex = c(1,2,3,4),header = FALSE)
+      
+       #Removes empty rows
+      tmp_meta <- tmp_meta[rowSums(is.na(tmp_meta)) != ncol(tmp_meta),]
+      
+     
+      #pulls the rain data from the individual sheets for each year.
+      
+      tmp_data <-data.frame()
+      
+      for (k in  Years_of_interest){
+        
+       #Trys each year sheet and will print an error message is the sheet is absent
+        
+        tmp <- try(read.xlsx(file = precip_files_full[i],rowIndex = c(1:366), colIndex = c(1,2), sheetName = k,as.data.frame = TRUE,header = FALSE),silent = TRUE)
+       
+        if (class(tmp) == "try-error"){
+          
+          print(paste0(precip_files_sans_ext[i]," did not contain year ",k))
+        
+          }else{
+          
+        tmp_data <- rbind(tmp_data,tmp)
+        
+        }
+        }
+      
+      
+      #tmp_data<-lapply(y,function(x){read.xlsx(file = precip_files_full[i], sheetName = x,as.data.frame = TRUE)})
+      
+         #Fills in the appropriate Class with data and metadata
+         for(j in slot_names ){
+                
+                if (j == "Data"){
+                    slot(station_data[[precip_files_sans_ext[i]]], j) <- tmp_data
+                }
+           else if(j == "Latitude" | j == "Longitude") {
+             slot(station_data[[precip_files_sans_ext[i]]], j) <- as.numeric(tmp_meta[which(slot_names == j)-1,3])
+           }
+                  else{
+                  
+                    slot(station_data[[precip_files_sans_ext[i]]], j) <- as.character(tmp_meta[which(slot_names == j)-1,2])
+                       }
+        }
+        
+        }
+        
+      
+      
+    return(station_data)
+      
+    }
+```
+
+```{r}
+weather_station_database<-precip_database("~/Dropbox/SLE/Maricopa_WeatherStations/Precip/Test_precip/")
+```
