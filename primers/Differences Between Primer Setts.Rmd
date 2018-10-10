@@ -1,0 +1,45 @@
+---
+title: "Differences_Between_Primer_Sets"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+load("~/Dropbox/SLE/Primers/primer_function.RData")
+
+  primers<-read.csv("~/Dropbox/SLE/Primers/SLEV_NA_TiledAmpliconScheme.csv", header = TRUE, stringsAsFactors = FALSE)
+
+SNPs <- read.csv("~/Dropbox/SLE/Primers/Primer_Diffs/Position_of_N_in_Kern2.txt",header = FALSE, stringsAsFactors = TRUE)
+
+Diffs_Column <- rep(0,nrow(primers))
+
+for (i in 1:length(Diffs_Column)){
+  for(j in SNPs[,1]){
+    if (j >= min(primers$Start[i],primers$End[i]) && j <= max(primers$Start[i],primers$End[i])){
+           Diffs_Column[i] = Diffs_Column[i] + 1
+    }
+  }
+}
+
+Diffs_Column
+
+primers_updated <- cbind(primers,Diffs_Column)
+colnames(primers_updated) <- c(colnames(primers),"Diffs_Column")
+
+View(primers_updated[primers_updated$Pool == 1,])
+View(primers_updated[primers_updated$Pool == 2,])
+View(primers_updated[primers_updated$Diffs_Column  >= 3,])
+sum_column <- c()
+count = 1
+for ( i in seq(from = 1,to = length(Diffs_Column - 2), by = 2)){
+  sum_column[count] <- sum(Diffs_Column[i],Diffs_Column[i+1])
+  count = count + 1
+  
+}
+
+write.csv(primers_updated, "~/Dropbox/SLE/Primers/Primer_Diffs/Old_Primers_Diffs_complete.csv")
+
+```

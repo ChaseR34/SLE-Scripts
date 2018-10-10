@@ -1,0 +1,201 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+```{r}
+#primers<-read.csv("~/Dropbox/SLE/Primers/SLEV_NA_TiledAmpliconScheme.csv",header = TRUE, na.strings = c("","NA"))
+
+load("primer_function.RData")
+
+primers<-primer_database("~/Dropbox/SLE/Primers/SLEV_NA_TiledAmpliconScheme.csv")
+#RT***_hits.csv files from the SLE Directory
+
+
+
+file_names <- function(file_directory){
+  #list.files(path ="/Users/Curly/Dropbox/SLE/SLE_Genomes/Seq_Test",pattern = "RT.*._Hits",full.names = TRUE )
+  
+  return(list.files(path =file_directory,pattern = ".*._hits.*",full.names = TRUE ))
+}
+
+RT_files<-file_names("/Users/Curly/Dropbox/SLE/SLE_Genomes/Seq_Test/")
+
+#Pull RT_Names
+
+split_filePath <- as.array(strsplit(RT_files, split = "\\/|\\/|\\_"))
+
+RTnum_Contain<-function (file_array){ 
+for( i in file_array[[1]]){
+  c <- grepl("RT...",i,perl=TRUE)
+  if(isTRUE(c)){
+    return(i)
+  }
+}
+}
+
+RTnum_Contain(split_filePath[1])
+
+Rt_names<-apply(X = split_filePath, MARGIN = 1, RTnum_Contain)
+
+count = 1
+
+#read files in
+
+read_files_and_sum <- function(File_Names,RT_Names){
+count = 1
+RT_Counts <- list()
+RT_sums <- list()
+  for(i in File_Names ){
+  RT_Counts[[RT_Names[count]]] <- as.data.frame(read.csv(i, header = TRUE))
+  count = count + 1
+  }
+
+#sum across all columns
+for ( i in RT_Names){
+  RT_sums[[paste(i,"_sum",sep ="")]] <- apply(RT_Counts[[i]],1,sum)
+  
+}
+return(RT_sums)
+
+}
+
+cool <- read_files_and_sum(RT_files,Rt_names)
+
+Find_Sequence_Gaps <- function(less_than_indexes){
+  total = length(less_than_indexes)
+  start_end = c(0,0)
+  final = c()
+  count = 0
+
+  for (i in 1:total){
+    
+    
+     if(less_than_indexes[i]+1 == less_than_indexes[i+1] && count == 0){
+       count = count + 1
+       start_end[1] <- less_than_indexes[i]
+     }
+   
+   else if(i == total){
+     
+       start_end[2] <- less_than_indexes[i]
+       final = rbind(final, start_end)
+       
+   }  
+   else if (less_than_indexes[i]+1 != less_than_indexes[i+1]){
+     
+       start_end[2] <- less_than_indexes[i]
+       final = rbind(final, start_end)
+       start_end[1] <- less_than_indexes[i+1]
+     
+     }
+   
+  }
+  
+# colnames(final)<-c("Begin","End")
+# rownames(final)<-c(as.character(seq(1,nrow(final))))
+  rownames(final) <-c()
+  return(final)
+}
+
+
+
+#Finds regions that have low coverage.
+Low_Coverage <- function(sum_vector,primers,max_count){
+        RT_LC <- list()
+       
+       
+      for ( i in names(sum_vector)){
+        
+        less_than_indexes <- which(sum_vector[[i]] < max_count)
+        Gap_vector<-Find_Sequence_Gaps(less_than_indexes)
+        LC_name <-paste(i,"_LC",sep ="")
+        
+        
+        Gap_vector_diffs <- Gap_vector[,2] - Gap_vector[,1] 
+        
+        RT_LC[[LC_name]] <- Gap_vector[Gap_vector_diffs > 20,]
+        
+        primer_row_names <- rownames(primers)
+        
+        
+        primer_gap <- c()
+        count <- 1
+        for(j in 1:nrow(RT_LC[[LC_name]])){
+          
+  
+        if( as.numeric(RT_LC[[LC_name]][j,][1])<=as.numeric(primers[,1]) && count == 1 ){
+          primer_gap[count] <-primer_row_names[count]
+          count <- count + 1
+          
+        }else if (as.numeric(RT_LC[[LC_name]][j,][1])>tail(as.numeric(primers[,2]),n=1)){
+          primer_gap[count] <-c("Gap out of range of primers")
+          count <- count + 1
+          
+        }else if(as.numeric(RT_LC[[LC_name]][j,][1])<=as.numeric(primers[,2]) && as.numeric(RT_LC[[LC_name]][j,][1]) > as.numeric(primers[,2])){
+          primer_gap[count] <- tail(primer_row_names,n=1)
+          count <- count + 1
+          
+        }else{     
+          
+          Gap_primers<-primer_row_names[(as.numeric(primers[,1]) <= as.numeric(RT_LC[[LC_name]][j,][1]) & as.numeric(primers[,2]) >= as.numeric(RT_LC[[LC_name]][j,][1]))] #| ( as.numeric(primers[,1])<=as.numeric(RT_LC[[LC_name]][j,][1])& as.numeric(primers[,2])>=as.numeric(RT_LC[[LC_name]][j,][2]))]
+        
+          if(length(Gap_primers) > 1){
+                  primer_gap[count] <- paste(Gap_primers,collapse = "_")
+                  count = count + 1
+          }else{
+
+
+                 primer_gap[count] <- Gap_primers
+
+                count = count + 1
+                
+          }
+        }     
+   
+   }
+        Gap_Size  <- RT_LC[[LC_name]][,2] - RT_LC[[LC_name]][,1]
+        RT_LC[[LC_name]] <- cbind(t(t(primer_gap)),RT_LC[[LC_name]],Gap_Size)
+        colnames(RT_LC[[LC_name]]) <- c("Primer","Gap_Begins", "Gap_Ends", "Gap_Size")
+        
+      }
+
+        return(RT_LC)
+        
+        }
+
+
+Primer_Gap_Data <- function(Hits_Dir,primer_file,max_count){
+    load("~/Dropbox/SLE/SLE_Scripts/primers/Determine_Regions_of_No_Coverage.RData")
+    load("~/Dropbox/SLE/SLE_Scripts/primers/primer_function.RData")
+    primers<-primer_database(primer_file = primer_file,max_count)
+    
+    RT_Files<-file_names(Hits_Dir)
+    print(RT_Files)
+    split_filePath <- as.array(strsplit(RT_Files, split = "\\/|\\/|\\_"))
+    print("Work")
+    Rt_names<-apply(X = split_filePath, MARGIN = 1, RTnum_Contain)
+    print(Rt_names)
+    print("cool")
+    Rt_Sum <- read_files_and_sum(RT_Files,Rt_names)
+    print("here")
+    Primer_Gaps <- Low_Coverage(Rt_Sum,primers = primers,max_count = max_count)
+    print("why")
+    return(Primer_Gaps)
+    }
+
+
+(test3<-Primer_Gap_Data("/Users/Curly/Dropbox/SLE/SLE_Genomes/New_Primers_Test_09418/Second_Attempt","~/Dropbox/SLE/Primers/SLEV_NA_TiledAmpliconScheme.csv",700))
+
+
+
+file_names(file_directory = "/Users/Curly/Dropbox/SLE/SLE_Genomes/New_Primers_Test_09418/Second_Attempt" )
+
+
+```
+

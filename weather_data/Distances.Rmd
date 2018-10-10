@@ -1,239 +1,120 @@
 ---
-title: "nearest Neighbor"
+title: "Untitled"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-```{r}
-#https://gist.github.com/valentinitnelav/ea94fea68227e05c453e13c4f7b7716b
-dg2dec <- function(varb, Dg=NA, Min=NA, Sec=NA, SW.Hemisphere="S|W") {
-  # Dg=decimal, Min=minutes and Sec=seconds; 
-  # NOTE 1 - if the format is "degrees decimal minutes - DdM" (e.g. 40° 26.767′ N) and not 
-  # "degrees minutes seconds - DMS" (e.g. 40° 26′ 46″ N), then call the function only with 
-  # Dg and Min arguments, like dg2dec(varb, Dg="°", Min="′N"). 
-  # Same applies when there is no seconds symbol (e.g. 45°12'7.38).
-  # Note that one should not use blank spaces in Dg, Min or Sec arguments (will return NA).
-  # For more details on formats see: 
-  # https://en.wikipedia.org/wiki/Geographic_coordinate_conversion#Coordinate_format_conversion
-  
-  # Use paste0("[", Dg, Min, Sec, "]") to build regex [] pattern
-  # therefore, strsplit() will split string "varb" by what symbols you give to Dg, Min, Sec
-  
-  try_error<- try(sapply(strsplit(varb, paste0('[', Dg, Min, Sec, ']')), as.numeric))
-  
-  if(class(try_error) == "try-error"){
-    
-    DMS <- sapply(strsplit(varb,split = " "), as.numeric)
-  }else{
- 
-  DMS <- sapply(strsplit(varb, paste0('[', Dg, Min, Sec, ']')), as.numeric)
-  }
-  # DMS is a matrix; first row contains degrees; second - minutes; third - seconds.
-  # If the format is "degrees decimal minutes" (e.g. 40° 26.767′ N) and not 
-  # "degrees minutes seconds" (e.g. 40° 26′ 46″ N), then the matrix has only two valid rows: 
-  # first row contains degrees; the second - minutes;
-  # therefore, compute conversion for seconds only if there are more than 2 rows in DMS 
-  # and Sec is different from NA (if there are seconds in the DMS format)
-  decdg <- abs(DMS[1, ]) + DMS[2, ]/60 + ifelse(dim(DMS)[1] > 2  & !is.na(Sec), DMS[3, ]/3600, 0)
-  
-  # all cordinates from Southern or Western Hemispheres become negative in their decimal format
-  SW <- grepl(pattern = SW.Hemisphere, x = varb, ignore.case = TRUE)
-  return(ifelse(SW, -1, 1) * decdg)
-}
 
+```{r}
+library(RANN)
+library(leaflet)
+library(sp)
 ```
 
-
-
-https://gis.stackexchange.com/questions/213971/units-for-radius-in-nn2-in-rann-package
-```{r}
-
-######################################################################################################
-################################### Loading Non_Precip Database ######################################
-######################################################################################################
-
-SLE_weather<-read.csv("~/Dropbox/SLE/Maricopa_WeatherStations/tmp/cool3.csv", header = FALSE)
-colnames(SLE_weather) <- c("Date","maxTemp","meanTemp","minTemp","maxDewpnt", "meanDewpnt","minDewpnt","maxRhumid","minRhumid","maxPkwind","maxBaropr","minBaropr","maxSolrad","Station") 
-
-######################################################################################################
-###################################     Loading ALERT senors    ######################################
-######################################################################################################
-
-Lat_Long_prev <- read.csv("~/Dropbox/SLE/Maricopa_WeatherStations/ALERT_sensors_all_by_ID.csv",header = TRUE,stringsAsFactors = FALSE)
-
-######################################################################################################
-###################################     Getting Station Lat Long Coords      #########################
-######################################################################################################
-
-stations<- Lat_Long_prev$Station.ID[!duplicated(Lat_Long_prev$Station.ID)]
-name <- Lat_Long_prev$Station.Name[!duplicated(Lat_Long_prev$Station.ID)]
-lat <- Lat_Long_prev$Latitude.DMS[!duplicated(Lat_Long_prev$Station.ID)]
-long <- Lat_Long_prev$Longitude.DMS[!duplicated(Lat_Long_prev$Station.ID)]
-
-
-other_stations <- SLE_weather$Station[!duplicated(SLE_weather$Station)]
-
-Lat_long_weather_stations<-data.frame( stations = stations[stations %in% other_stations],
-                                       name = name[stations %in% other_stations],
-                                      latitude = lat[stations %in% other_stations],
-                                      longitude=long[stations %in% other_stations],stringsAsFactors = FALSE
-     
-)
-
-for( i in 1:NROW(Lat_long_weather_stations[[1]])){
-  tmp_long <- as.numeric(dg2dec(varb=paste(as.character(Lat_long_weather_stations$longitude[i]),"W",sep = " "), Dg=" ", Min=" ", Sec=" E|W"))
-  
-  Lat_long_weather_stations$longitude[i] <- tmp_long
- 
-  
-  tmp_lat <- as.numeric(dg2dec(varb=paste(as.character(Lat_long_weather_stations$latitude[i]),"N",sep = " "), Dg=" ", Min=" ", Sec=" N|S"))
-  
-  
-   Lat_long_weather_stations$latitude[i] <- tmp_lat
-}
-
-```
+           
 
 ```{r}
+All_Mosquito<- read.csv("~/Dropbox/SLE/All_mosquito_complete.csv",header = TRUE)
+View(mosquito_data)
 
-######################################################################################################
-###################################   Loading Precip Database   ######################################
-######################################################################################################
+stan_data<-read.csv("~/Dropbox/Bayes/Model/stan_data.csv")
 
-load("~/Dropbox/SLE/Maricopa_WeatherStations/Precip/Precip_weather_station_database2.Rdata")
+Trap_ID <- All_Mosquito$Trap.ID[!duplicated(All_Mosquito$Trap.ID)]
+Trap_lat <- All_Mosquito$Latitude[!duplicated(All_Mosquito$Trap.ID)]
+Trap_long <- All_Mosquito$Longitude[!duplicated(All_Mosquito$Trap.ID)]
+Trap_ID_RT <- Trap_ID[grep(pattern = "RT.*",x = Trap_ID)]
+Trap_lat_RT <- Trap_lat[grep(pattern = "RT.*",x = Trap_ID)]
+Trap_long_RT <- Trap_long[grep(pattern = "RT.*",x = Trap_ID)]
 
+trap_db <- data.frame(Trap_ID = Trap_ID_RT, Latitude = Trap_lat_RT, Longitude = Trap_long_RT)
 
-# Getting lat long coordinates for precip database.
-
-name <- c()
-Latitude <- c()
-Longitude <- c()
-station <- c()
-count <- 1
-for (i in names(weather_station_database)){
-  name[count] <- i
-  Latitude[count] <- slot(getElement(weather_station_database,i),"Latitude")
-  Longitude[count] <- slot(getElement(weather_station_database,i),"Longitude")
-  station[count] <- slot(getElement(weather_station_database,i),"Station")
-  count = count + 1
-}
-
-Precip_Long_Lats <- cbind(name, station,Latitude,Longitude)
-colnames(Precip_Long_Lats) <- c("name", "station","Latitude","Longitude")
-
-Precip_Long_Lats_df <- as.data.frame(Precip_Long_Lats,stringsAsFactors = FALSE)
-
-# Using Lat Long coords to get overlapping weather stations.
-
-same_stations2<-round(as.numeric(Precip_Long_Lats_df$Latitude),4) %in%  round(as.numeric(Lat_long_weather_stations$latitude),4)
-
-precip_same <- Precip_Long_Lats_df[same_stations2,]
-precip_same <- rbind(precip_same,Precip_Long_Lats_df[1,],Precip_Long_Lats_df[136,])
+head (trap_db)
 
 
-precip_same <- cbind(precip_same[order(as.numeric(precip_same$Latitude, stringAsFactor = FALSE)),],Lat_long_weather_stations$stations[order(as.numeric(Lat_long_weather_stations$latitude))])
+Lat_long_weather_stations <- read.csv("~/Dropbox/SLE/Maricopa_WeatherStations/Precip_and_other_table.csv", header = TRUE)
 
+  distances <- nn2(data =Lat_long_weather_stations[,c("Latitude", "Longitude")] , query = trap_db[,2:3],k = 2  )
 
-colnames(precip_same) <- c("Precip_File",
-                           "station",
-                           "Latitude",                                        
-                           "Longitude",
-                           "Station_ID")
-
- precip_same <- precip_same[,c(1,5,2,3,4)]
- precip_same[4,3] <- "EMF @ Arizona Ave. [SP]"
- 
- 
- write.csv(precip_same, file = "~/Dropbox/SLE/Maricopa_WeatherStations/Precip_and_other_table.csv")
- 
-```
-
-```{r}
-
-Final_Database_SLE <- function(weather_station = "character", precip_db, other_data){
-
-                           
-
-  station_precip <- precip_db$Station_ID[precip_db$Station_ID == weather_station]
-  station_precip_database <- getElement( weather_station_database, station_precip)
   
-  #SLE_weather_duprm <-  SLE_weather[!duplicated(all_years),]
-  Station_ID_database <- other_data[other_data$Station == weather_station,]
-  
-  names(station_precip_database@Data) <- c("Date", "precip")
-  
-  
-  all_years <- as.numeric(as.Date(Station_ID_database$Date, format="%m/%d/%y",origin = "1970-01-01"))
-  
-  precip_years <- as.numeric(as.Date(station_precip_database@Data$Date, format="%Y-%m-%d",origin = "1970-01-01"))
-
- Station_ID_db_duprm <- Station_ID_database[!duplicated(all_years),]
-  
-  all_years_dubrm <- as.numeric(as.Date(Station_ID_db_duprm$Date, format="%m/%d/%y",origin = "1970-01-01"))
- 
-  Station_ID_db_duprm_ord <- Station_ID_db_duprm[ordered(all_years_dubrm),]
-  
-  
-  precip_index <-  !duplicated(precip_years[ordered(precip_years)])
-  
-  station_precip_ordered <- station_precip_database@Data$precip[precip_index]
-  station_precip_date <- station_precip_database@Data$Date[precip_index]
-  station_precip_numeric <-  as.numeric(as.Date(station_precip_date,origin = "1970-01-01"))
-  
+  weath_names_trap <- c()
+  longitude_weath <- c()
+  latitude_weath <- c()
   count = 1
-  tmp_pre <- c()
-  for ( i in Station_ID_db_duprm_ord$Date){
+for( i in distances$nn.idx[,1]){
+  weath_names_trap[count] <- as.character(Lat_long_weather_stations$Station_ID[i])
+  longitude_weath[count] <- Lat_long_weather_stations$Longitude[i]
+  latitude_weath[count] <- Lat_long_weather_stations$Latitude[i]
+  count = count + 1
+}  
+
+  
+trap_db <- cbind(trap_db,weath_names_trap,index = distances$nn.idx[,1],longitude_weath,latitude_weath)
+
+write.csv(trap_db, "~/Dropbox/SLE/Maricopa_WeatherStations/Trap_Weather_Station_paired.csv",row.names = FALSE)
+
+  
       
-  current_Date <- as.numeric(as.Date(i, format="%m/%d/%y",origin = "1970-01-01"))
-  
-
-  if(current_Date %in% station_precip_numeric){
-   
-     tmp_pre[count] <- as.character(station_precip_ordered[which(station_precip_numeric == current_Date)])
-   
-     count = count + 1
-    } else{
-      tmp_pre[count] <- "NA"
-      count = count + 1
-    }
-   
-  }
-
- 
-  Station_ID_db_duprm_ord$Precip <- tmp_pre
-  
-  
-  Station_ID_db_duprm_ord <- Station_ID_db_duprm_ord[c(1,15,2:14)]
-    
-    Station_ID_db_duprm_ord <-Station_ID_db_duprm_ord[order(as.numeric(as.Date(Station_ID_db_duprm_ord$Date, format="%m/%d/%y",origin = "1970-01-01"))),]
-  
-
-year = c(seq(1,nrow(Station_ID_db_duprm_ord)))
-week = c(seq(1,nrow(Station_ID_db_duprm_ord)))
-
-for ( i in seq(1,nrow(Station_ID_db_duprm_ord))){
-  year[i] <- format(as.Date(Station_ID_db_duprm_ord$Date[i], format="%m/%d/%y"),"%Y")
-  week[i] <- strftime(format(as.Date(Station_ID_db_duprm_ord$Date[i], format="%m/%d/%y"),"%Y-%m-%d"), "%V")
-  }
-Station_ID_db_duprm_ord<-cbind(year,week,Station_ID_db_duprm_ord)
-
-Station_ID_db_duprm_ord <- apply(Station_ID_db_duprm_ord,2, function(x){ gsub(pattern = "_.*",replacement = "NA",x = x,perl = TRUE)})
- 
-return(Station_ID_db_duprm_ord)   
-}   
-
-View(Final_Database_SLE("G140",precip_same,SLE_weather))
-
-FD_SLE = list()
-for( k in precip_same$Station_ID ){
-  FD_SLE[[k]] <- Final_Database_SLE(k,precip_same,SLE_weather)
-  
-}
+View(trap_db  )
+```
 
 
 
-View(FD_SLE$G145)
+```{r}
+
+
+
+
+cool <- apply(Lat_long_weather_stations[,c("Longitude","Latitude")],2,as.numeric)
+#cool <- cool[1:5,]
+cool <- SpatialPoints(cool)
+
+
+#coordinates(cool) <- ~x+y
+
+traps2<-read.csv("~/Dropbox/Bayes/Model/lat_long_traps.csv", header = TRUE)
+
+typeof(cool)
+#traps<-read.csv("~/Dropbox/Bayes/Model/lat_long_traps.csv", header = TRUE)
+traps <- trap_db[,2:3]
+traps <- traps[,c(2,1)]
+head(traps)
+
+traps <- SpatialPoints(traps)
+
+
+
+leaflet() %>% addProviderTiles("OpenStreetMap") %>% addMarkers(lng = traps@coords[,1], lat = traps@coords[,2],
+             label = trap_db$Trap_ID) %>% addCircleMarkers(lng = Lat_long_weather_stations$Longitude, lat = Lat_long_weather_stations$Latitude,
+             label = Lat_long_weather_stations$Station_ID)
+
+mapview(cool)
 
 ```
+
+
+
+```{r}
+paired_weath_trap<- read.csv("~/Dropbox/SLE/Maricopa_WeatherStations/Trap_Weather_Station_paired.csv", header = TRUE, stringsAsFactors = FALSE)
+
+data_input<-read.csv("~/Dropbox/Bayes/Model/stan_data.csv")
+
+
+stan_lat <- paired_weath_trap[,2][paired_weath_trap[,1] %in%  names(data_input)[6:18]]
+stan_long <- paired_weath_trap[,3][paired_weath_trap[,1] %in%  names(data_input)[6:18]]
+
+
+stan_sp <- cbind(stan_long,stan_lat)
+colnames(stan_sp) <- c("Longitude","Latitude")
+stan_sp <- SpatialPoints(stan_sp)
+
+
+leaflet() %>% addProviderTiles("OpenStreetMap") %>% addCircleMarkers(lng = stan_sp@coords[,1], lat = stan_sp@coords[,2],color = "black",weight = 1,opacity = 1,
+             label = trap_db$Trap_ID,fillColor = "black",radius = 5) %>% addCircleMarkers(lng = Lat_long_weather_stations$Longitude, lat = Lat_long_weather_stations$Latitude,label = Lat_long_weather_stations$Station_ID,color = "black",weight = 1,opacity = 1,fillColor = "Orange",fillOpacity = 0.8,stroke = TRUE,radius = 5)%>% addLegend(position = "bottomright",colors = c("black","Orange"), labels = c("Mosquito Trap","Weather Station"), opacity = 1)
+
+
+leaflet() %>% addProviderTiles("OpenStreetMap") %>% addCircleMarkers(lng = traps@coords[,1], lat = traps@coords[,2],color = "black",weight = 1,opacity = 1,
+             label = trap_db$Trap_ID,fillColor = "black",radius = 2,fillOpacity = 1)%>% addLegend(position = "bottomright",colors = "black", labels = c("Mosquito Trap"), opacity = 1)
+```
+

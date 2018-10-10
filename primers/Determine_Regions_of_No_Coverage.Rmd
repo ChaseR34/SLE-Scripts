@@ -1,0 +1,134 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+```{r}
+primers<-read.csv("~/Dropbox/SLE/Primers/SLEV_NA_TiledAmpliconScheme.csv",header = TRUE, na.strings = c("","NA"))
+
+#RT***_hits.csv files from the SLE Directory
+
+file_names <- list.files(path ="/Users/Curly/Dropbox/SLE/SLE_Genomes/Seq_Test",pattern = "RT.*._Hits",full.names = TRUE )
+
+#Pull RT_Names
+
+split_filePath <- as.array(strsplit(file_names, split = "\\/|\\/|\\_"))
+
+RTnum_Contain<-function (file_array){ 
+for( i in file_array[[1]]){
+  c <- grepl("RT...",i,perl=TRUE)
+  if(isTRUE(c)){
+    return(i)
+  }
+}
+}
+
+RTnum_Contain(split_filePath[1])
+
+Rt_names<-apply(X = split_filePath, MARGIN = 1, RTnum_Contain)
+
+count = 1
+
+#read files in
+for(i in file_names){
+  tmp <- read.csv(i, header = TRUE)
+  assign(Rt_names[count], tmp)
+  count = count + 1
+}
+#sum across all columns
+for ( i in Rt_names){
+  tmp <- apply(get(i),1,sum)
+  assign(paste(i,"_sum",sep =""), tmp)
+}
+
+Find_Sequence_Gaps <- function(x){
+  total = length(x)
+  final = c(0,0) 
+  final1 = c(0,0)
+  count = 0
+  
+  for (i in 1:total){
+    
+      if(x[i]+1 == x[i+1] && count == 0){
+        count = count + 1
+        final1[1] <- x[i]
+        
+      }
+    
+    else if(i == total){
+      
+        final1[2] <- x[i]
+        final = rbind(final, final1)
+       
+        
+    }  
+    else if (x[i]+1 != x[i+1]){
+      
+        final1[2] <- x[i]
+        final = rbind(final, final1)
+        final1[1] <- x[i+1]
+      
+      }
+    
+  }
+  
+# colnames(final)<-c("Begin","End")
+# rownames(final)<-c(as.character(seq(1,nrow(final))))
+  rownames(final) <-c()
+  return(final)
+}
+
+#Finds regions that have low coverage.
+for ( i in ls()[grepl("R.*_sum",ls(),perl=TRUE)]){
+  tmp <- which(get(i)<50)
+  tmp1<-Find_Sequence_Gaps(tmp)
+  assign(paste(i,"_lfifty",sep =""), tmp1)
+}
+```
+
+
+```{r}
+#reformatting the primer spreadsheet so it is easier to compare indices to the primer ranges.
+primer_range_begin <- primers$Start[grepl(".*LEFT",primers$Primer.Name,perl=TRUE)]
+primer_range_end <- primers$End[grepl(".*RIGHT",primers$Primer.Name,perl=TRUE)]
+
+full_names <- primers$Primer.Name[grepl(".*RIGHT",primers$Primer.Name,perl=TRUE)]
+split_primer_names <- as.vector(strsplit(x = as.character(full_names), split = "\\_R",perl = TRUE))
+primer_names <- apply(as.array(split_primer_names),1,function(x) x[[1]][1])
+
+primer_done<- cbind(primer_range_begin,primer_range_end)
+
+rownames(primer_done) <- primer_names
+
+#determines which primer pairs contain the poor sequence.
+word = c()
+for (i in ls()[grepl("RT.*_sum_lfifty",ls(),perl=TRUE)]){
+  word = rbind(word,i)
+  tmp = get(i)  
+  #print(i)
+  #print(tmp[2,][2])
+  #print(nrow(tmp))
+ for(j in 1:nrow(tmp)){
+    if( tmp[j,][2]-tmp[j,][1] > 20){
+   cool <- as.character(row.names(primer_done)[(primer_done[,1] < tmp[j,][1]&primer_done[,2] > tmp[j,][1]) | (primer_done[,1]<tmp[j,][1]&primer_done[,2]>tmp[j,][2])])
+   
+  #print("cool is: ")
+   print(cool)
+   word<- rbind(word,cool) 
+
+ }
+   }
+
+
+}
+
+```
+```{r}
+write.csv(word,"~/Dropbox/SLE/SLE_Genomes/Primers_to_Remove_012918_3.csv")
+
+```
